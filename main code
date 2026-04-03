@@ -1,0 +1,180 @@
+#include <Wire.h>
+#include <Adafruit_GFX.h>
+#include <Adafruit_SSD1306.h>
+
+#define SCREEN_WIDTH 128
+#define SCREEN_HEIGHT 64
+Adafruit_SSD1306 display(SCREEN_WIDTH, SCREEN_HEIGHT, &Wire, -1);
+
+// I2C Pins
+#define SDA_PIN 6
+#define SCL_PIN 7
+
+// Buttons
+#define BTN_SELECT 8
+#define BTN_DOWN   9
+#define BTN_UP     10
+
+// States
+enum State {
+  SELECT_DRUG,
+  SELECT_WEIGHT,
+  SHOW_RESULT
+};
+
+State currentState = SELECT_DRUG;
+
+// Drug Data
+String drugs[] = {"Paracetamol", "Domperidone", "Ranitidine"};
+int drugIndex = 0;
+
+// Weight
+int weight = 0;   // 0–100 kg
+
+// debounce
+unsigned long lastPress = 0;
+
+// ---------------- SETUP ----------------
+void setup() {
+  Serial.begin(115200);
+
+  Wire.begin(SDA_PIN, SCL_PIN);
+  display.begin(SSD1306_SWITCHCAPVCC, 0x3C);
+
+  pinMode(BTN_SELECT, INPUT_PULLUP);
+  pinMode(BTN_DOWN, INPUT_PULLUP);
+  pinMode(BTN_UP, INPUT_PULLUP);
+}
+
+// ---------------- LOOP ----------------
+void loop() {
+  handleButtons();
+  drawUI();
+}
+
+// ---------------- BUTTON LOGIC ----------------
+void handleButtons() {
+  if (millis() - lastPress < 200) return;
+
+  // DOWN (decrease)
+  if (digitalRead(BTN_DOWN) == LOW) {
+    if (currentState == SELECT_DRUG) {
+      drugIndex = (drugIndex + 1) % 3;
+    }
+    else if (currentState == SELECT_WEIGHT) {
+      weight = max(weight - 1, 0);
+    }
+    lastPress = millis();
+  }
+
+  // UP (increase)
+  if (digitalRead(BTN_UP) == LOW) {
+    if (currentState == SELECT_DRUG) {
+      drugIndex = (drugIndex - 1 + 3) % 3;
+    }
+    else if (currentState == SELECT_WEIGHT) {
+      weight = min(weight + 1, 100);  // ✅ 0–100 kg
+    }
+    lastPress = millis();
+  }
+
+  // SELECT
+  if (digitalRead(BTN_SELECT) == LOW) {
+    if (currentState == SELECT_DRUG) {
+      currentState = SELECT_WEIGHT;
+      weight = 0;
+    } 
+    else if (currentState == SELECT_WEIGHT) {
+      currentState = SHOW_RESULT;
+    } 
+    else if (currentState == SHOW_RESULT) {
+      currentState = SELECT_DRUG;
+    }
+    lastPress = millis();
+  }
+}
+
+// ---------------- DOSE LOGIC ----------------
+String getDose(int drug, int w) {
+
+  // Paracetamol
+  if (drug == 0) {
+    if (w <= 10) return "1.5 ml";
+    else if (w <= 20) return "3 ml";
+    else if (w <= 40) return "5 ml";
+    else return "6.5 ml";
+  }
+
+  // Domperidone
+  if (drug == 1) {
+    if (w <= 10) return "0.2 ml";
+    else if (w <= 20) return "0.4 ml";
+    else if (w <= 40) return "0.6 ml";
+    else return "1 ml";
+  }
+
+  // Ranitidine
+  if (drug == 2) {
+    if (w <= 10) return "2 ml";
+    else if (w <= 20) return "3 ml";
+    else if (w <= 30) return "4 ml";
+    else return "5 ml";
+  }
+
+  return "ERROR";
+}
+
+// ---------------- DISPLAY ----------------
+void drawUI() {
+  display.clearDisplay();
+  display.setTextColor(WHITE);
+
+  // 🧾 DRUG SELECTION
+  if (currentState == SELECT_DRUG) {
+    display.setTextSize(1);
+    display.setCursor(0, 0);
+    display.println("Select Drug:");
+
+    for (int i = 0; i < 3; i++) {
+      display.setCursor(0, 15 + i * 12);
+      if (i == drugIndex) display.print("> ");
+      else display.print("  ");
+      display.println(drugs[i]);
+    }
+  }
+
+  // ⚖️ WEIGHT INPUT
+  else if (currentState == SELECT_WEIGHT) {
+    display.setTextSize(1);
+    display.setCursor(0, 0);
+    display.println("Set Weight:");
+
+    display.setTextSize(2);
+    display.setCursor(20, 25);
+    display.print(weight);
+    display.print(" kg");
+  }
+
+  // 📊 RESULT SCREEN
+  else if (currentState == SHOW_RESULT) {
+    display.setTextSize(1);
+
+    display.setCursor(0, 0);
+    display.print("Weight: ");
+    display.print(weight);
+    display.println(" kg");
+
+    display.setCursor(0, 20);
+    display.print("Dose: ");
+    display.println(getDose(drugIndex, weight));
+
+    display.setCursor(0, 40);
+    display.print("Drug: ");
+    display.println(drugs[drugIndex]);
+
+    display.setCursor(0, 55);
+    display.println("Press Select");
+  }
+
+  display.display();
+}
